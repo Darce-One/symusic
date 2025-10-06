@@ -22,7 +22,7 @@ TEST_CASE("Test MIDI File I/O", "[symusic][io][midi]") {
 
     SECTION("MIDI Read from file roundtrip") {
         // Load in a score from the testcases
-        fs::path scorePath = "testcases" / "One_track_MIDIs" / "Maestro_1.mid";
+        fs::path scorePath = fs::path("testcases") / "One_track_MIDIs" / "Maestro_1.mid";
 
         std::ifstream in_file(scorePath, std::ios::binary);
         std::vector<uint8_t> read_data((std::istreambuf_iterator<char>(in_file)), std::istreambuf_iterator<char>());
