@@ -20,6 +20,42 @@ TEST_CASE("Test MIDI File I/O", "[symusic][io][midi]") {
         fs::create_directory(temp_dir);
     }
 
+    SECTION("MIDI Read from file roundtrip") {
+        // Load in a score from the testcases
+        fs::path scorePath = "testcases" / "One_track_MIDIs" / "Maestro_1.mid";
+
+        std::ifstream in_file(scorePath, std::ios::binary);
+        std::vector<uint8_t> read_data((std::istreambuf_iterator<char>(in_file)), std::istreambuf_iterator<char>());
+        in_file.close();
+
+        Score<Tick> read_score = Score<Tick>::parse<DataFormat::MIDI>(std::span<const uint8_t>(read_data));
+
+        // write the same file to a temp
+        fs::path midi_out_path = temp_dir / "test_midi_out.mid";
+        std::vector<uint8_t> midi_data = read_score.dumps<DataFormat::MIDI>();
+
+        std::ofstream file(midi_out_path, std::ios::binary);
+        file.write(reinterpret_cast<const char*>(midi_data.data()), midi_data.size());
+        file.close();
+
+        // Read the MIDI file back from the temp
+        std::ifstream in_file(midi_out_path, std::ios::binary);
+        std::vector<uint8_t> reread_data((std::istreambuf_iterator<char>(in_file)), std::istreambuf_iterator<char>());
+        in_file.close();
+        Score<Tick> reread_score = Score<Tick>::parse<DataFormat::MIDI>(std::span<const uint8_t>(reread_data));
+
+        REQUIRE(read_score.ticks_per_quarter == read_score.ticks_per_quarter);
+        REQUIRE(read_score.tracks->size() == read_score.tracks->size());
+        REQUIRE(read_score.tracks->at(0)->name == read_score.tracks->at(0)->name);
+        REQUIRE(read_score.tracks->at(0)->notes->size() == read_score.tracks->at(0)->notes->size());
+        REQUIRE(read_score.tempos->size() == read_score.tempos->size());
+        REQUIRE(read_score.tempos->at(0).mspq == read_score.tempos->at(0).mspq);
+        REQUIRE(read_score.time_signatures->size() == read_score.time_signatures>size());
+        REQUIRE(read_score.time_signatures->at(0).numerator == read_score.time_signatures->at(0).numerator);
+        REQUIRE(read_score.time_signatures->at(0).denominator == read_score.time_signatures->at(0).denominator);
+
+    }
+
     SECTION("MIDI Read/Write Roundtrip") {
         // Create a simple score with one track and a few notes
         Score<Tick> score(480);  // 480 ticks per quarter
