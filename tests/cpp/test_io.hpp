@@ -39,9 +39,9 @@ TEST_CASE("Test MIDI File I/O", "[symusic][io][midi]") {
         file.close();
 
         // Read the MIDI file back from the temp
-        std::ifstream in_file(midi_out_path, std::ios::binary);
-        std::vector<uint8_t> reread_data((std::istreambuf_iterator<char>(in_file)), std::istreambuf_iterator<char>());
-        in_file.close();
+        std::ifstream in_file2(midi_out_path, std::ios::binary);
+        std::vector<uint8_t> reread_data((std::istreambuf_iterator<char>(in_file2)), std::istreambuf_iterator<char>());
+        in_file2.close();
         Score<Tick> reread_score = Score<Tick>::parse<DataFormat::MIDI>(std::span<const uint8_t>(reread_data));
 
         REQUIRE(read_score.ticks_per_quarter == read_score.ticks_per_quarter);
@@ -50,7 +50,7 @@ TEST_CASE("Test MIDI File I/O", "[symusic][io][midi]") {
         REQUIRE(read_score.tracks->at(0)->notes->size() == read_score.tracks->at(0)->notes->size());
         REQUIRE(read_score.tempos->size() == read_score.tempos->size());
         REQUIRE(read_score.tempos->at(0).mspq == read_score.tempos->at(0).mspq);
-        REQUIRE(read_score.time_signatures->size() == read_score.time_signatures>size());
+        REQUIRE(read_score.time_signatures->size() == read_score.time_signatures->size());
         REQUIRE(read_score.time_signatures->at(0).numerator == read_score.time_signatures->at(0).numerator);
         REQUIRE(read_score.time_signatures->at(0).denominator == read_score.time_signatures->at(0).denominator);
 
