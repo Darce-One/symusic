@@ -87,11 +87,11 @@ if(BUILD_SYMUSIC_PY)
     message("Building python binding.")
     find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
     # set symusic target to O3 and release mode because nanobind use minisize
-#   execute_process(
-#        COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
-#        OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NB_DIR)
-#        list(APPEND CMAKE_PREFIX_PATH "${NB_DIR}")
-#   find_package(nanobind CONFIG REQUIRED)
+    #   execute_process(
+    #        COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    #        OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NB_DIR)
+    #        list(APPEND CMAKE_PREFIX_PATH "${NB_DIR}")
+    #   find_package(nanobind CONFIG REQUIRED)
     # show python executable path
     message(STATUS "Python_EXECUTABLE: ${Python_EXECUTABLE}")
 
@@ -183,6 +183,11 @@ if(BUILD_SYMUSIC_TEST)
     include(CTest)
     include(Catch)
     enable_testing()
+    add_custom_command(
+        TARGET symusic_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/testcases" "$<TARGET_FILE_DIR:symusic_test>/testcases"
+    )
     add_test(
         NAME symusic_ctest
         COMMAND $<TARGET_FILE:symusic_test> --success

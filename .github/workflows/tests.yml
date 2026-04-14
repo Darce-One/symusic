@@ -63,8 +63,10 @@ jobs:
   cpp_test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
+
       matrix:
-        os: [ ubuntu-latest, windows-latest, macOS-latest ]
+        os: [ubuntu-latest, windows-latest, macOS-latest]
 
     steps:
       - uses: actions/checkout@v6
@@ -87,7 +89,7 @@ jobs:
 
       - name: Configure CMake with Coverage
         if: runner.os != 'Windows'
-        run: cmake -S . -Bbuild -DBUILD_SYMUSIC_TEST:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE:BOOL=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: cmake -S . -Bbuild -DBUILD_SYMUSIC_TEST:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Configure CMake (Windows)
         if: runner.os == 'Windows'
