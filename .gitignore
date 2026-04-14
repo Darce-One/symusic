@@ -15,3 +15,10 @@
 **/.vs
 docs/book
 .venv
+docs/_build
+.venv-docs
+.gstack
+.codex
+.serena
+.trae
+build*/

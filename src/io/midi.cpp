@@ -23,6 +23,18 @@ namespace symusic {
 namespace details {
 // define some utils
 
+[[nodiscard]] bool is_valid_midi_data_byte(const uint8_t value) { return value <= 0x7F; }
+
+void ensure_valid_midi_data_byte(
+    const char* const field_name, const uint8_t value, const bool sanitize_data
+) {
+    if (!sanitize_data && !is_valid_midi_data_byte(value)) {
+        throw std::runtime_error(
+            "Get " + std::string(field_name) + "=" + std::to_string(value)
+        );
+    }
+}
+
 template<typename T>
 void sort_by_time(vec<T>& data) {
     pdqsort_branchless(data.begin(), data.end(), [](const auto& a, const auto& b) {
@@ -190,10 +202,17 @@ public:
     }
 };
 
+/**
+ * Parse the given MIDI view while optionally sanitizing payload bytes prior to decoding.
+ *
+ * @param midi MIDI view produced by minimidi.
+ * @param tick2unit Converter that maps MIDI ticks to the desired time unit.
+ * @param sanitize_data Clamp payload bytes to the 7-bit MIDI range before parsing.
+ */
 template<TType T, typename Conv, typename Container>   // only works for Tick and Quarter
     requires(std::is_same_v<T, Tick> || std::is_same_v<T, Quarter>)
 [[nodiscard]] Score<T> parse_midi(
-    const minimidi::MidiFileView<Container>& midi, Conv tick2unit, bool strict_mode = true
+    const minimidi::MidiFileView<Container>& midi, Conv tick2unit, bool sanitize_data = false
 ) {
     typedef typename T::unit unit;
     // remove this redundant copy in the future
@@ -211,29 +230,16 @@ template<TType T, typename Conv, typename Container>   // only works for Tick an
         // iter midi messages in the track
 
         for (const auto& msg : midi_track) {
-
             const auto cur_tick = static_cast<Tick::unit>(msg.time);
             const auto cur_time = tick2unit(cur_tick);
             switch (msg.type()) {
             case minimidi::MessageType::NoteOn: {
                 const auto& note_on = msg.template cast<minimidi::NoteOn>();
-                uint8_t pitch          = note_on.pitch();
-                uint8_t velocity       = note_on.velocity();
-
-                if (pitch >= 128)
-                    throw std::range_error("Get pitch=" + std::to_string(pitch));
-                if (velocity >= 128) {
-                    if (strict_mode)
-                        throw std::range_error("Get velocity=" + std::to_string(velocity));
-                    else
-                        velocity = std::clamp(velocity,
-                            decltype(velocity)(0),
-                            decltype(velocity)(127));
-                }
-
-                if (velocity != 0) {
+                ensure_valid_midi_data_byte("pitch", note_on.pitch(), sanitize_data);
+                ensure_valid_midi_data_byte("velocity", note_on.velocity(), sanitize_data);
+                if (note_on.velocity() != 0) {
                     trackManager.add_note(
-                        note_on.channel(), pitch, cur_tick, velocity
+                        note_on.channel(), note_on.pitch(), cur_time, note_on.velocity()
                     );
                     break;
                 }
@@ -241,22 +247,16 @@ template<TType T, typename Conv, typename Container>   // only works for Tick an
             }
             case minimidi::MessageType::NoteOff: {
                 const auto& note_off = msg.template cast<minimidi::NoteOff>();
-                uint8_t pitch          = note_off.pitch();
-                trackManager.end_note(note_off.channel(), pitch, cur_tick);
+                ensure_valid_midi_data_byte("pitch", note_off.pitch(), sanitize_data);
+                ensure_valid_midi_data_byte("velocity", note_off.velocity(), sanitize_data);
+                trackManager.end_note(note_off.channel(), note_off.pitch(), cur_time);
                 break;
             }
             case minimidi::MessageType::ProgramChange: {
                 const auto&   program_change = msg.template cast<minimidi::ProgramChange>();
                 const uint8_t channel        = program_change.channel();
-                uint8_t program        = program_change.program();
-                if (program >= 128) {
-                    if(strict_mode)
-                        throw std::range_error("Get program=" + std::to_string(program));
-                    else
-                        program = std::clamp(program,
-                            decltype(program)(0),
-                            decltype(program)(127));
-                }
+                const uint8_t program        = program_change.program();
+                ensure_valid_midi_data_byte("program", program, sanitize_data);
                 trackManager.set_program(
                     channel, program
                 );   // Changed to call TrackManager's method
@@ -272,25 +272,11 @@ template<TType T, typename Conv, typename Container>   // only works for Tick an
                     track.controls.reserve(message_num / 2);
                 }
 
-                uint8_t control_number = control_change.control_number();
-                uint8_t control_value  = control_change.control_value();
+                const uint8_t control_number = control_change.control_number();
+                const uint8_t control_value  = control_change.control_value();
 
-                if (control_number >= 128) {
-                    if (strict_mode)
-                        throw std::range_error("Get control_number=" + std::to_string(control_number));
-                    else
-                        control_number = std::clamp(control_number,
-                            decltype(control_number)(0),
-                            decltype(control_number)(127));
-                }
-                if (control_value >= 128) {
-                    if (strict_mode)
-                        throw std::range_error("Get control_value=" + std::to_string(control_value));
-                    else
-                        control_value = std::clamp(control_value,
-                            decltype(control_number)(0),
-                            decltype(control_number)(127));
-                }
+                ensure_valid_midi_data_byte("control_number", control_number, sanitize_data);
+                ensure_valid_midi_data_byte("control_value", control_value, sanitize_data);
                 track.controls.emplace_back(cur_time, control_number, control_value);
                 // Pedal Part
                 if (control_number == 64) {
@@ -311,15 +297,10 @@ template<TType T, typename Conv, typename Container>   // only works for Tick an
                 const auto& pitch_bend = msg.template cast<minimidi::PitchBend>();
                 auto&       track = trackManager.template get<false>(pitch_bend.channel()).track;
                 auto        value = pitch_bend.pitch_bend();
-                if (value < minimidi::PitchBend<>::MIN_PITCH_BEND
-                        || value > minimidi::PitchBend<>::MAX_PITCH_BEND) {
-                    if (strict_mode)
-                        throw std::range_error("Get pitch_bend=" + std::to_string(value));
-                    else
-                        value = std::clamp(value,
-                            decltype(value)(minimidi::PitchBend<>::MIN_PITCH_BEND),
-                            decltype(value)(minimidi::PitchBend<>::MAX_PITCH_BEND));
-                }
+                if (!sanitize_data
+                    && (value < minimidi::PitchBend<>::MIN_PITCH_BEND
+                        || value > minimidi::PitchBend<>::MAX_PITCH_BEND))
+                    throw std::runtime_error("Get pitch_bend=" + std::to_string(value));
                 track.pitch_bends.emplace_back(cur_time, value);
                 break;
             }
@@ -505,10 +486,9 @@ minimidi::MidiFile<> to_midi(const Score<Tick>& score) {
         );
         // merge prev to (note on and note off)
         gfx::timmerge(
-            msgs.begin(),
-            msgs.begin() + note_begin,
-            msgs.end(),
-            [](const auto& a, const auto& b) { return (a.time) < (b.time); }
+            msgs.begin(), msgs.begin() + note_begin, msgs.end(), [](const auto& a, const auto& b) {
+                return (a.time) < (b.time);
+            }
         );
         // messages will be sorted by time in minimidi
         if (!msgs.empty()) {
@@ -521,20 +501,42 @@ minimidi::MidiFile<> to_midi(const Score<Tick>& score) {
     return std::move(midi);
 }
 
+/**
+ * Parse raw MIDI bytes to a score, optionally sanitizing payloads before decoding.
+ *
+ * @param bytes Raw MIDI bytes to parse.
+ * @param sanitize_data Clamp payload bytes to the 7-bit MIDI range.
+ */
 template<TType T>
-Score<T> parse_midi(const std::span<const u8> bytes, bool strict_mode = true) {
-    const minimidi::MidiFileView<std::span<const uint8_t>> midi{bytes.data(), bytes.size()};
+Score<T> parse_midi(const std::span<const u8> bytes, bool sanitize_data = false) {
+    const auto parse_view = [&](const auto& midi_view) -> Score<T> {
+        if constexpr (std::is_same_v<T, Tick>) {
+            return parse_midi<Tick>(midi_view, [](const Tick::unit x) { return x; }, sanitize_data);
+        } else if constexpr (std::is_same_v<T, Quarter>) {
+            const auto tpq = static_cast<float>(midi_view.ticks_per_quarter());
+            return parse_midi<Quarter>(
+                midi_view,
+                [tpq](const Tick::unit x) { return static_cast<float>(x) / tpq; },
+                sanitize_data
+            );
+        } else {
+            return convert<Second>(
+                parse_midi<Tick>(midi_view, [](const Tick::unit x) { return x; }, sanitize_data)
+            );
+        }
+    };
 
-    if constexpr (std::is_same_v<T, Tick>) {
-        return parse_midi<Tick>(midi, [](const Tick::unit x) { return x; }, strict_mode);
-    } else if constexpr (std::is_same_v<T, Quarter>) {
-        const auto tpq = static_cast<float>(midi.ticks_per_quarter());
-        return parse_midi<Quarter>(midi, [tpq](const Tick::unit x) {
-            return static_cast<float>(x) / tpq;
-        }, strict_mode);
-    } else {
-        return convert<Second>(parse_midi<Tick>(midi, [](const Tick::unit x) { return x; }), strict_mode);
+    if (sanitize_data) {
+        const minimidi::MidiFileView<minimidi::container::SmallBytes> midi{
+            bytes.data(),
+            bytes.size(),
+            true   // sanitize data payloads to enforce strict MIDI range
+        };
+        return parse_view(midi);
     }
+
+    const minimidi::MidiFileView<std::span<const uint8_t>> midi{bytes.data(), bytes.size()};
+    return parse_view(midi);
 }
 }   // namespace details
 
@@ -580,8 +582,8 @@ vec<u8> Score<Second>::dumps<DataFormat::MIDI>() const {
         return Score<T>::parse<DataFormat::MIDI>(bytes);                                      \
     }                                                                                         \
     template<>                                                                                \
-    Score<T> parse<DataFormat::MIDI, Score<T>>(std::span<const u8> bytes, bool strict_mode) { \
-        return details::parse_midi<T>(bytes, strict_mode);                                    \
+    Score<T> parse<DataFormat::MIDI, Score<T>>(std::span<const u8> bytes, bool sanitize_data) { \
+        return details::parse_midi<T>(bytes, sanitize_data);                                    \
     }                                                                                         \
     template<>                                                                                \
     vec<u8> dumps<DataFormat::MIDI, Score<T>>(const Score<T>& data) {                         \
